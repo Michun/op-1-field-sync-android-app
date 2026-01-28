@@ -1,0 +1,16 @@
+<resources>
+    <string name="app_name">OP-1 Sync</string>
+    <string name="usb_permission_title">Połącz z OP-1 Field</string>
+    <string name="usb_permission_message">Czy chcesz zezwolić aplikacji na dostęp do OP-1 Field?</string>
+    <string name="connect">Połącz</string>
+    <string name="disconnect">Rozłącz</string>
+    <string name="connected">Połączono</string>
+    <string name="disconnected">Niepołączono</string>
+    <string name="tapes">Taśmy</string>
+    <string name="synth">Syntezatory</string>
+    <string name="drum">Perkusja</string>
+    <string name="mixdown">Miksy</string>
+    <string name="library">Biblioteka</string>
+    <string name="backup">Backup</string>
+    <string name="settings">Ustawienia</string>
+</resources>

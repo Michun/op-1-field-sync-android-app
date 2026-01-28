@@ -1,0 +1,29 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- OP-1 inspired icon: stylized "1" with orange accent -->
+    <group android:translateX="27" android:translateY="27">
+        <!-- Background circle outline -->
+        <path
+            android:pathData="M27,2 C41.36,2 53,13.64 53,27 C53,40.36 41.36,52 27,52 C12.64,52 1,40.36 1,27 C1,13.64 12.64,2 27,2"
+            android:strokeWidth="2"
+            android:strokeColor="#4A4A4A"
+            android:fillColor="#00000000"/>
+        
+        <!-- Stylized "1" -->
+        <path
+            android:pathData="M23,16 L31,16 L31,40 L23,40 Z"
+            android:fillColor="#FF6B35"/>
+        <path
+            android:pathData="M19,16 L27,16 L27,20 L23,20 L23,16 Z"
+            android:fillColor="#FF6B35"/>
+        
+        <!-- Bottom line accent -->
+        <path
+            android:pathData="M17,40 L37,40 L37,44 L17,44 Z"
+            android:fillColor="#E5E5E5"/>
+    </group>
+</vector>
