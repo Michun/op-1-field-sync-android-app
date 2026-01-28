@@ -3,6 +3,8 @@ package com.op1sync.app.feature.library
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.op1sync.app.core.audio.AudioPlayerManager
+import com.op1sync.app.core.audio.OP1PatchMetadata
+import com.op1sync.app.core.audio.OP1PatchParser
 import com.op1sync.app.data.local.FileType
 import com.op1sync.app.data.local.LocalFileEntity
 import com.op1sync.app.data.local.ProjectFolder
@@ -10,6 +12,7 @@ import com.op1sync.app.data.repository.LibraryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import java.io.File
 import javax.inject.Inject
 
 data class LibraryUiState(
@@ -20,7 +23,9 @@ data class LibraryUiState(
     val expandedFolder: String? = null, // Currently expanded folder name
     val isLoading: Boolean = true,
     val error: String? = null,
-    val successMessage: String? = null
+    val successMessage: String? = null,
+    val selectedPatchMetadata: OP1PatchMetadata? = null,
+    val selectedFile: LocalFileEntity? = null
 )
 
 enum class FileTypeFilter {
@@ -30,7 +35,8 @@ enum class FileTypeFilter {
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
     private val libraryRepository: LibraryRepository,
-    val audioPlayerManager: AudioPlayerManager
+    val audioPlayerManager: AudioPlayerManager,
+    private val patchParser: OP1PatchParser
 ) : ViewModel() {
     
     private val _uiState = MutableStateFlow(LibraryUiState())
@@ -155,4 +161,24 @@ class LibraryViewModel @Inject constructor(
     fun stopPlayback() {
         audioPlayerManager.stop()
     }
+    
+    /**
+     * Load and show patch metadata for an AIF file.
+     */
+    fun showPatchMetadata(file: LocalFileEntity) {
+        viewModelScope.launch {
+            val metadata = patchParser.parsePatch(File(file.path))
+            _uiState.update { 
+                it.copy(
+                    selectedPatchMetadata = metadata,
+                    selectedFile = file
+                ) 
+            }
+        }
+    }
+    
+    fun dismissPatchMetadata() {
+        _uiState.update { it.copy(selectedPatchMetadata = null, selectedFile = null) }
+    }
 }
+

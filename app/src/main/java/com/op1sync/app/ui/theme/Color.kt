@@ -16,3 +16,8 @@ val TeWhite = Color(0xFFFFFFFF)
 val TeGreen = Color(0xFF4CAF50)
 val TeRed = Color(0xFFE53935)
 val TeYellow = Color(0xFFFFCA28)
+val TeBlue = Color(0xFF2196F3)
+val TePurple = Color(0xFF9C27B0)
+val TePink = Color(0xFFE91E63)
+val TeCyan = Color(0xFF00BCD4)
+

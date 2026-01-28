@@ -22,16 +22,20 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.op1sync.app.core.audio.OP1PatchMetadata
 import com.op1sync.app.data.local.FileType
 import com.op1sync.app.data.local.LocalFileEntity
 import com.op1sync.app.data.local.ProjectFolder
 import com.op1sync.app.ui.components.MiniPlayer
+import com.op1sync.app.ui.components.PatchInfoDialog
+import com.op1sync.app.ui.components.getPatchTypeIcon
 import com.op1sync.app.ui.theme.*
 import kotlinx.coroutines.delay
 
 /**
  * Drum screen with category-based navigation.
  * Shows category tiles (slots, user, then others), drilling down to file lists.
+ * Patches show metadata only (no playback).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -40,7 +44,6 @@ fun DrumScreen(
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val playbackState by viewModel.audioPlayerManager.playbackState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     
     // Current category being viewed (null = show category tiles)
@@ -50,16 +53,18 @@ fun DrumScreen(
         viewModel.setFilter(FileTypeFilter.DRUM)
     }
     
-    LaunchedEffect(playbackState.isPlaying) {
-        while (playbackState.isPlaying) {
-            delay(100)
-            viewModel.audioPlayerManager.updatePosition()
-        }
-    }
-    
     // Group folders by their subcategory (second level folder name)
     val categories = remember(uiState.filteredFolders) {
         groupFoldersByCategory(uiState.filteredFolders)
+    }
+    
+    // Show patch info dialog (info only, no playback for patches)
+    uiState.selectedPatchMetadata?.let { metadata ->
+        PatchInfoDialog(
+            metadata = metadata,
+            fileName = uiState.selectedFile?.name ?: "",
+            onDismiss = { viewModel.dismissPatchMetadata() }
+        )
     }
     
     Scaffold(
@@ -89,14 +94,6 @@ fun DrumScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = TeBlack, titleContentColor = TeLightGray)
             )
         },
-        bottomBar = {
-            MiniPlayer(
-                playbackState = playbackState,
-                onPlayPauseClick = { viewModel.togglePlayPause() },
-                onCloseClick = { viewModel.stopPlayback() },
-                onSeek = { viewModel.seekTo(it) }
-            )
-        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = TeBlack
     ) { paddingValues ->
@@ -118,17 +115,17 @@ fun DrumScreen(
                         categories = categories,
                         icon = Icons.Outlined.Sensors,
                         onCategoryClick = { selectedCategory = it },
-                        currentTrackName = playbackState.currentTrack?.name,
                         modifier = Modifier.fillMaxSize().padding(paddingValues)
                     )
                 } else {
-                    // Show files in selected category
-                    CategoryFilesView(
+                    // Show files in selected category (info only)
+                    PatchFilesView(
                         categoryName = category,
                         folders = categories[category] ?: emptyList(),
                         isSlots = category.equals("slots", ignoreCase = true),
-                        currentTrackName = playbackState.currentTrack?.name,
-                        onPlayFile = { viewModel.playFile(it) },
+                        onFileClick = { file ->
+                            viewModel.showPatchMetadata(file)
+                        },
                         modifier = Modifier.fillMaxSize().padding(paddingValues)
                     )
                 }
@@ -139,6 +136,7 @@ fun DrumScreen(
 
 /**
  * Synth screen with category-based navigation.
+ * Patches show metadata only (no playback).
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -147,7 +145,6 @@ fun SynthScreen(
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val playbackState by viewModel.audioPlayerManager.playbackState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     
     var selectedCategory by remember { mutableStateOf<String?>(null) }
@@ -156,15 +153,17 @@ fun SynthScreen(
         viewModel.setFilter(FileTypeFilter.SYNTH)
     }
     
-    LaunchedEffect(playbackState.isPlaying) {
-        while (playbackState.isPlaying) {
-            delay(100)
-            viewModel.audioPlayerManager.updatePosition()
-        }
-    }
-    
     val categories = remember(uiState.filteredFolders) {
         groupFoldersByCategory(uiState.filteredFolders)
+    }
+    
+    // Show patch info dialog (info only, no playback for patches)
+    uiState.selectedPatchMetadata?.let { metadata ->
+        PatchInfoDialog(
+            metadata = metadata,
+            fileName = uiState.selectedFile?.name ?: "",
+            onDismiss = { viewModel.dismissPatchMetadata() }
+        )
     }
     
     Scaffold(
@@ -194,14 +193,6 @@ fun SynthScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = TeBlack, titleContentColor = TeLightGray)
             )
         },
-        bottomBar = {
-            MiniPlayer(
-                playbackState = playbackState,
-                onPlayPauseClick = { viewModel.togglePlayPause() },
-                onCloseClick = { viewModel.stopPlayback() },
-                onSeek = { viewModel.seekTo(it) }
-            )
-        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = TeBlack
     ) { paddingValues ->
@@ -222,16 +213,16 @@ fun SynthScreen(
                         categories = categories,
                         icon = Icons.Outlined.Piano,
                         onCategoryClick = { selectedCategory = it },
-                        currentTrackName = playbackState.currentTrack?.name,
                         modifier = Modifier.fillMaxSize().padding(paddingValues)
                     )
                 } else {
-                    CategoryFilesView(
+                    PatchFilesView(
                         categoryName = category,
                         folders = categories[category] ?: emptyList(),
                         isSlots = category.equals("slots", ignoreCase = true),
-                        currentTrackName = playbackState.currentTrack?.name,
-                        onPlayFile = { viewModel.playFile(it) },
+                        onFileClick = { file ->
+                            viewModel.showPatchMetadata(file)
+                        },
                         modifier = Modifier.fillMaxSize().padding(paddingValues)
                     )
                 }
@@ -248,7 +239,6 @@ private fun CategoryTilesView(
     categories: Map<String, List<ProjectFolder>>,
     icon: ImageVector,
     onCategoryClick: (String) -> Unit,
-    currentTrackName: String?,
     modifier: Modifier = Modifier
 ) {
     // Sort: slots first, then user, then alphabetically
@@ -269,9 +259,6 @@ private fun CategoryTilesView(
         items(sortedCategories) { categoryName ->
             val folders = categories[categoryName] ?: emptyList()
             val fileCount = folders.sumOf { it.fileCount }
-            val isPlaying = folders.any { folder ->
-                folder.files.any { it.name == currentTrackName }
-            }
             
             CategoryTile(
                 name = categoryName,
@@ -281,7 +268,6 @@ private fun CategoryTilesView(
                     else -> icon
                 },
                 fileCount = fileCount,
-                isPlaying = isPlaying,
                 onClick = { onCategoryClick(categoryName) }
             )
         }
@@ -293,7 +279,6 @@ private fun CategoryTile(
     name: String,
     icon: ImageVector,
     fileCount: Int,
-    isPlaying: Boolean,
     onClick: () -> Unit
 ) {
     Card(
@@ -302,9 +287,7 @@ private fun CategoryTile(
             .aspectRatio(1.2f)
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isPlaying) TeOrange.copy(alpha = 0.15f) else TeDarkGray
-        )
+        colors = CardDefaults.cardColors(containerColor = TeDarkGray)
     ) {
         Column(
             modifier = Modifier.fillMaxSize().padding(16.dp),
@@ -313,7 +296,7 @@ private fun CategoryTile(
             Icon(
                 icon,
                 contentDescription = null,
-                tint = if (isPlaying) TeOrange else TeGreen,
+                tint = TeGreen,
                 modifier = Modifier.size(32.dp)
             )
             
@@ -321,7 +304,7 @@ private fun CategoryTile(
                 Text(
                     text = name.uppercase(),
                     style = MaterialTheme.typography.titleMedium,
-                    color = if (isPlaying) TeOrange else TeLightGray,
+                    color = TeLightGray,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -336,6 +319,157 @@ private fun CategoryTile(
 }
 
 /**
+ * List view of patch files (info only, no playback).
+ */
+@Composable
+private fun PatchFilesView(
+    categoryName: String,
+    folders: List<ProjectFolder>,
+    isSlots: Boolean,
+    onFileClick: (LocalFileEntity) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val allFiles = remember(folders) {
+        folders.flatMap { it.files }
+            .filter { it.name.lowercase().endsWith(".aif") }
+            .sortedBy { it.name }
+    }
+    
+    LazyColumn(
+        modifier = modifier.padding(horizontal = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        contentPadding = PaddingValues(vertical = 8.dp)
+    ) {
+        if (isSlots) {
+            // Special slots view: group by slot number
+            val slotFiles = allFiles.groupBy { file ->
+                val parts = file.sourcePath.split("/")
+                val slotsIndex = parts.indexOfFirst { it.equals("slots", true) }
+                if (slotsIndex >= 0 && slotsIndex + 1 < parts.size) {
+                    parts[slotsIndex + 1].toIntOrNull() ?: 0
+                } else 0
+            }.toSortedMap()
+            
+            slotFiles.forEach { (slotNum, files) ->
+                files.forEach { file ->
+                    item {
+                        PatchSlotRow(
+                            slotNumber = slotNum,
+                            file = file,
+                            onClick = { onFileClick(file) }
+                        )
+                    }
+                }
+            }
+        } else {
+            // Regular file list
+            items(allFiles) { file ->
+                PatchFileRow(
+                    file = file,
+                    onClick = { onFileClick(file) }
+                )
+            }
+        }
+        
+        item { Spacer(Modifier.height(16.dp)) }
+    }
+}
+
+@Composable
+private fun PatchSlotRow(
+    slotNumber: Int,
+    file: LocalFileEntity,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = TeDarkGray)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Slot number badge
+            Surface(
+                shape = RoundedCornerShape(4.dp),
+                color = TeOrange.copy(alpha = 0.2f)
+            ) {
+                Text(
+                    text = slotNumber.toString().padStart(2, '0'),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TeOrange,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+            
+            Spacer(Modifier.width(12.dp))
+            
+            // File name
+            Text(
+                text = file.name.substringBeforeLast("."),
+                style = MaterialTheme.typography.bodyMedium,
+                color = TeLightGray,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            
+            // Info icon
+            Icon(
+                Icons.Outlined.Info,
+                contentDescription = "Info",
+                tint = TeMediumGray,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun PatchFileRow(
+    file: LocalFileEntity,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(containerColor = TeDarkGray)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                Icons.Outlined.AudioFile,
+                contentDescription = null,
+                tint = TeGreen,
+                modifier = Modifier.size(24.dp)
+            )
+            
+            Spacer(Modifier.width(12.dp))
+            
+            Text(
+                text = file.name.substringBeforeLast("."),
+                style = MaterialTheme.typography.bodyMedium,
+                color = TeLightGray,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            
+            // Info icon
+            Icon(
+                Icons.Outlined.Info,
+                contentDescription = "Info",
+                tint = TeMediumGray,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+    }
+}
+
+/**
  * List view of files within a category.
  */
 @Composable
@@ -344,6 +478,7 @@ private fun CategoryFilesView(
     folders: List<ProjectFolder>,
     isSlots: Boolean,
     currentTrackName: String?,
+    onFileClick: ((LocalFileEntity) -> Unit)? = null,
     onPlayFile: (LocalFileEntity) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -376,7 +511,8 @@ private fun CategoryFilesView(
                             slotNumber = slotNum,
                             file = file,
                             isPlaying = file.name == currentTrackName,
-                            onClick = { onPlayFile(file) }
+                            onClick = { onFileClick?.invoke(file) ?: onPlayFile(file) },
+                            onPlayClick = { onPlayFile(file) }
                         )
                     }
                 }
@@ -387,7 +523,8 @@ private fun CategoryFilesView(
                 AudioFileRow(
                     file = file,
                     isPlaying = file.name == currentTrackName,
-                    onClick = { onPlayFile(file) }
+                    onClick = { onFileClick?.invoke(file) ?: onPlayFile(file) },
+                    onPlayClick = { onPlayFile(file) }
                 )
             }
         }
@@ -401,7 +538,8 @@ private fun SlotFileRow(
     slotNumber: Int,
     file: LocalFileEntity,
     isPlaying: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onPlayClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -449,11 +587,15 @@ private fun SlotFileRow(
                 overflow = TextOverflow.Ellipsis
             )
             
-            if (isPlaying) {
+            // Play button
+            IconButton(
+                onClick = onPlayClick,
+                modifier = Modifier.size(32.dp)
+            ) {
                 Icon(
-                    Icons.Outlined.GraphicEq,
-                    null,
-                    tint = TeOrange,
+                    if (isPlaying) Icons.Outlined.GraphicEq else Icons.Outlined.PlayArrow,
+                    contentDescription = "Odtwórz",
+                    tint = if (isPlaying) TeOrange else TeGreen,
                     modifier = Modifier.size(20.dp)
                 )
             }
@@ -465,7 +607,8 @@ private fun SlotFileRow(
 private fun AudioFileRow(
     file: LocalFileEntity,
     isPlaying: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onPlayClick: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -477,9 +620,10 @@ private fun AudioFileRow(
         shape = RoundedCornerShape(8.dp)
     ) {
         Row(
-            modifier = Modifier.padding(12.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Type icon (will be enhanced when we load metadata)
             Icon(
                 imageVector = if (isPlaying) Icons.Outlined.GraphicEq else Icons.Outlined.AudioFile,
                 contentDescription = null,
@@ -503,6 +647,21 @@ private fun AudioFileRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = TeMediumGray
             )
+            
+            Spacer(Modifier.width(8.dp))
+            
+            // Play button
+            IconButton(
+                onClick = onPlayClick,
+                modifier = Modifier.size(32.dp)
+            ) {
+                Icon(
+                    if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                    contentDescription = "Odtwórz",
+                    tint = if (isPlaying) TeOrange else TeGreen,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }

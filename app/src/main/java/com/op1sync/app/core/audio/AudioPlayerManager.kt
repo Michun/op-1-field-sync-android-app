@@ -2,9 +2,14 @@ package com.op1sync.app.core.audio
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.extractor.DefaultExtractorsFactory
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,7 +22,8 @@ data class PlaybackState(
     val currentTrack: TrackInfo? = null,
     val position: Long = 0L,
     val duration: Long = 0L,
-    val isBuffering: Boolean = false
+    val isBuffering: Boolean = false,
+    val error: String? = null
 )
 
 data class TrackInfo(
@@ -30,6 +36,10 @@ data class TrackInfo(
 class AudioPlayerManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    companion object {
+        private const val TAG = "AudioPlayerManager"
+    }
+    
     private var exoPlayer: ExoPlayer? = null
     
     private val _playbackState = MutableStateFlow(PlaybackState())
@@ -37,6 +47,7 @@ class AudioPlayerManager @Inject constructor(
     
     private val playerListener = object : Player.Listener {
         override fun onPlaybackStateChanged(state: Int) {
+            Log.d(TAG, "Playback state: $state")
             updatePlaybackState()
         }
         
@@ -51,12 +62,32 @@ class AudioPlayerManager @Inject constructor(
         ) {
             updatePlaybackState()
         }
+        
+        override fun onPlayerError(error: PlaybackException) {
+            Log.e(TAG, "Playback error: ${error.errorCode} - ${error.message}", error)
+            _playbackState.value = _playbackState.value.copy(
+                error = "Błąd odtwarzania: ${error.message}",
+                isPlaying = false
+            )
+        }
     }
     
     private fun getOrCreatePlayer(): ExoPlayer {
-        return exoPlayer ?: ExoPlayer.Builder(context).build().also {
-            it.addListener(playerListener)
-            exoPlayer = it
+        return exoPlayer ?: run {
+            // Create ExtractorsFactory with AIFF support
+            val extractorsFactory = DefaultExtractorsFactory()
+                .setConstantBitrateSeekingEnabled(true)
+            
+            // Create MediaSourceFactory with custom extractors
+            val mediaSourceFactory = DefaultMediaSourceFactory(context, extractorsFactory)
+            
+            ExoPlayer.Builder(context)
+                .setMediaSourceFactory(mediaSourceFactory)
+                .build()
+                .also {
+                    it.addListener(playerListener)
+                    exoPlayer = it
+                }
         }
     }
     
@@ -81,7 +112,8 @@ class AudioPlayerManager @Inject constructor(
     }
     
     fun playFromMtp(localCachePath: String, name: String) {
-        val uri = Uri.parse("file://$localCachePath")
+        // Use Uri.fromFile to properly handle paths with special characters like #
+        val uri = Uri.fromFile(java.io.File(localCachePath))
         play(uri, name)
     }
     
