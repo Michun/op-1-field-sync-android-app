@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.op1sync.app.core.audio.AudioPlayerManager
 import com.op1sync.app.data.local.FileType
 import com.op1sync.app.data.local.LocalFileEntity
+import com.op1sync.app.data.local.ProjectFolder
 import com.op1sync.app.data.repository.LibraryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -12,10 +13,11 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class LibraryUiState(
-    val files: List<LocalFileEntity> = emptyList(),
-    val filteredFiles: List<LocalFileEntity> = emptyList(),
+    val folders: List<ProjectFolder> = emptyList(),
+    val filteredFolders: List<ProjectFolder> = emptyList(),
     val selectedFilter: FileTypeFilter = FileTypeFilter.ALL,
     val searchQuery: String = "",
+    val expandedFolder: String? = null, // Currently expanded folder name
     val isLoading: Boolean = true,
     val error: String? = null,
     val successMessage: String? = null
@@ -35,20 +37,20 @@ class LibraryViewModel @Inject constructor(
     val uiState: StateFlow<LibraryUiState> = _uiState.asStateFlow()
     
     init {
-        loadFiles()
+        loadFolders()
     }
     
-    private fun loadFiles() {
+    private fun loadFolders() {
         viewModelScope.launch {
-            libraryRepository.getAllFiles()
+            libraryRepository.getProjectFolders()
                 .catch { e ->
                     _uiState.update { it.copy(error = e.message, isLoading = false) }
                 }
-                .collect { files ->
+                .collect { folders ->
                     _uiState.update { state ->
                         state.copy(
-                            files = files,
-                            filteredFiles = applyFilter(files, state.selectedFilter, state.searchQuery),
+                            folders = folders,
+                            filteredFolders = applyFilter(folders, state.selectedFilter, state.searchQuery),
                             isLoading = false
                         )
                     }
@@ -60,7 +62,8 @@ class LibraryViewModel @Inject constructor(
         _uiState.update { state ->
             state.copy(
                 selectedFilter = filter,
-                filteredFiles = applyFilter(state.files, filter, state.searchQuery)
+                filteredFolders = applyFilter(state.folders, filter, state.searchQuery),
+                expandedFolder = null // Collapse when changing filter
             )
         }
     }
@@ -69,49 +72,70 @@ class LibraryViewModel @Inject constructor(
         _uiState.update { state ->
             state.copy(
                 searchQuery = query,
-                filteredFiles = applyFilter(state.files, state.selectedFilter, query)
+                filteredFolders = applyFilter(state.folders, state.selectedFilter, query)
             )
         }
     }
     
     private fun applyFilter(
-        files: List<LocalFileEntity>,
+        folders: List<ProjectFolder>,
         filter: FileTypeFilter,
         query: String
-    ): List<LocalFileEntity> {
+    ): List<ProjectFolder> {
         var result = when (filter) {
-            FileTypeFilter.ALL -> files
-            FileTypeFilter.TAPES -> files.filter { it.type == FileType.TAPE }
-            FileTypeFilter.SYNTH -> files.filter { it.type == FileType.SYNTH }
-            FileTypeFilter.DRUM -> files.filter { it.type == FileType.DRUM }
-            FileTypeFilter.MIXDOWN -> files.filter { it.type == FileType.MIXDOWN }
-            FileTypeFilter.FAVORITES -> files.filter { it.isFavorite }
+            FileTypeFilter.ALL -> folders
+            FileTypeFilter.TAPES -> folders.filter { it.type == FileType.TAPE }
+            FileTypeFilter.SYNTH -> folders.filter { it.type == FileType.SYNTH }
+            FileTypeFilter.DRUM -> folders.filter { it.type == FileType.DRUM }
+            FileTypeFilter.MIXDOWN -> folders.filter { it.type == FileType.MIXDOWN }
+            FileTypeFilter.FAVORITES -> folders.filter { it.isFavorite }
         }
         
         if (query.isNotBlank()) {
-            result = result.filter { it.name.contains(query, ignoreCase = true) }
+            result = result.filter { folder ->
+                folder.folderName.contains(query, ignoreCase = true) ||
+                folder.files.any { it.name.contains(query, ignoreCase = true) }
+            }
         }
         
         return result
+    }
+    
+    fun toggleFolderExpanded(folder: ProjectFolder) {
+        _uiState.update { state ->
+            state.copy(
+                expandedFolder = if (state.expandedFolder == folder.folderName) null 
+                    else folder.folderName
+            )
+        }
     }
     
     fun playFile(file: LocalFileEntity) {
         audioPlayerManager.playFromMtp(file.path, file.name)
     }
     
-    fun toggleFavorite(file: LocalFileEntity) {
+    fun playFirstInFolder(folder: ProjectFolder) {
+        // Find first audio file in folder
+        val audioFile = folder.files.firstOrNull { file ->
+            val lower = file.name.lowercase()
+            lower.endsWith(".wav") || lower.endsWith(".aif") || lower.endsWith(".aiff")
+        }
+        audioFile?.let { playFile(it) }
+    }
+    
+    fun toggleFolderFavorite(folder: ProjectFolder) {
         viewModelScope.launch {
-            libraryRepository.toggleFavorite(file)
+            libraryRepository.toggleFolderFavorite(folder)
         }
     }
     
-    fun deleteFile(file: LocalFileEntity) {
+    fun deleteFolder(folder: ProjectFolder) {
         viewModelScope.launch {
-            val success = libraryRepository.deleteFile(file)
+            val success = libraryRepository.deleteFolder(folder)
             if (success) {
-                _uiState.update { it.copy(successMessage = "Usunięto: ${file.name}") }
+                _uiState.update { it.copy(successMessage = "Usunięto: ${folder.folderName}") }
             } else {
-                _uiState.update { it.copy(error = "Nie udało się usunąć pliku") }
+                _uiState.update { it.copy(error = "Nie udało się usunąć folderu") }
             }
         }
     }

@@ -27,7 +27,10 @@ object AppModule {
             context,
             AppDatabase::class.java,
             "op1sync_database"
-        ).build()
+        )
+            .addMigrations(AppDatabase.MIGRATION_1_2)
+            .fallbackToDestructiveMigration()
+            .build()
     }
     
     @Provides

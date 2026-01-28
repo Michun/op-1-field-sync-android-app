@@ -1,5 +1,8 @@
 package com.op1sync.app.feature.library
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -9,6 +12,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -19,6 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.op1sync.app.data.local.FileType
 import com.op1sync.app.data.local.LocalFileEntity
+import com.op1sync.app.data.local.ProjectFolder
 import com.op1sync.app.ui.components.MiniPlayer
 import com.op1sync.app.ui.theme.*
 import kotlinx.coroutines.delay
@@ -36,7 +42,6 @@ fun LibraryScreen(
     
     val snackbarHostState = remember { SnackbarHostState() }
     
-    // Update playback position
     LaunchedEffect(playbackState.isPlaying) {
         while (playbackState.isPlaying) {
             delay(100)
@@ -44,7 +49,6 @@ fun LibraryScreen(
         }
     }
     
-    // Show messages
     LaunchedEffect(uiState.error, uiState.successMessage) {
         uiState.error?.let {
             snackbarHostState.showSnackbar(it)
@@ -110,7 +114,7 @@ fun LibraryScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("Szukaj...", color = TeMediumGray) },
+                placeholder = { Text("Szukaj projektu...", color = TeMediumGray) },
                 leadingIcon = {
                     Icon(
                         imageVector = Icons.Outlined.Search,
@@ -149,15 +153,15 @@ fun LibraryScreen(
                 }
             }
             
-            // File count
+            // Folder count
             Text(
-                text = "${uiState.filteredFiles.size} plików",
+                text = "${uiState.filteredFolders.size} projektów",
                 style = MaterialTheme.typography.bodySmall,
                 color = TeMediumGray,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
             )
             
-            // File list
+            // Folder list
             if (uiState.isLoading) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
@@ -165,7 +169,7 @@ fun LibraryScreen(
                 ) {
                     CircularProgressIndicator(color = TeOrange)
                 }
-            } else if (uiState.filteredFiles.isEmpty()) {
+            } else if (uiState.filteredFolders.isEmpty()) {
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -179,8 +183,8 @@ fun LibraryScreen(
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Text(
-                            text = if (uiState.files.isEmpty()) 
-                                "Biblioteka jest pusta\nPobierz pliki z OP-1" 
+                            text = if (uiState.folders.isEmpty()) 
+                                "Biblioteka jest pusta\nPobierz projekty z OP-1" 
                             else "Brak wyników",
                             style = MaterialTheme.typography.bodyLarge,
                             color = TeMediumGray
@@ -194,13 +198,19 @@ fun LibraryScreen(
                         .padding(horizontal = 16.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    items(uiState.filteredFiles) { file ->
-                        LibraryFileCard(
-                            file = file,
-                            isPlaying = playbackState.currentTrack?.name == file.name,
-                            onPlay = { viewModel.playFile(file) },
-                            onFavorite = { viewModel.toggleFavorite(file) },
-                            onDelete = { viewModel.deleteFile(file) }
+                    items(uiState.filteredFolders) { folder ->
+                        ProjectFolderCard(
+                            folder = folder,
+                            isExpanded = uiState.expandedFolder == folder.folderName,
+                            isPlaying = playbackState.currentTrack?.let { track ->
+                                folder.files.any { it.name == track.name }
+                            } ?: false,
+                            currentTrackName = playbackState.currentTrack?.name,
+                            onToggleExpand = { viewModel.toggleFolderExpanded(folder) },
+                            onPlay = { viewModel.playFirstInFolder(folder) },
+                            onPlayFile = { viewModel.playFile(it) },
+                            onFavorite = { viewModel.toggleFolderFavorite(folder) },
+                            onDelete = { viewModel.deleteFolder(folder) }
                         )
                     }
                     
@@ -212,10 +222,14 @@ fun LibraryScreen(
 }
 
 @Composable
-private fun LibraryFileCard(
-    file: LocalFileEntity,
+private fun ProjectFolderCard(
+    folder: ProjectFolder,
+    isExpanded: Boolean,
     isPlaying: Boolean,
+    currentTrackName: String?,
+    onToggleExpand: () -> Unit,
     onPlay: () -> Unit,
+    onPlayFile: (LocalFileEntity) -> Unit,
     onFavorite: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -224,8 +238,10 @@ private fun LibraryFileCard(
     if (showDeleteDialog) {
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
-            title = { Text("Usuń plik?") },
-            text = { Text("Czy na pewno chcesz usunąć ${file.name}?") },
+            title = { Text("Usuń projekt?") },
+            text = { 
+                Text("Czy na pewno chcesz usunąć ${folder.folderName}?\n(${folder.fileCount} plików)")
+            },
             confirmButton = {
                 TextButton(onClick = { 
                     showDeleteDialog = false
@@ -246,80 +262,181 @@ private fun LibraryFileCard(
     }
     
     Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onPlay),
+        modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (isPlaying) TeOrange.copy(alpha = 0.15f) else TeDarkGray
         )
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Type icon
-            Icon(
-                imageVector = when (file.type) {
-                    FileType.TAPE -> Icons.Outlined.Album
-                    FileType.SYNTH -> Icons.Outlined.Piano
-                    FileType.DRUM -> Icons.Outlined.Speaker
-                    FileType.MIXDOWN -> Icons.Outlined.MusicNote
-                    FileType.OTHER -> Icons.Outlined.AudioFile
-                },
-                contentDescription = null,
-                tint = if (isPlaying) TeOrange else TeGreen,
-                modifier = Modifier.size(32.dp)
-            )
-            
-            Spacer(modifier = Modifier.width(16.dp))
-            
-            // File info
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = file.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isPlaying) TeOrange else TeLightGray,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+        Column {
+            // Folder header
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(onClick = onToggleExpand)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Type icon
+                Icon(
+                    imageVector = when (folder.type) {
+                        FileType.TAPE -> Icons.Outlined.Album
+                        FileType.SYNTH -> Icons.Outlined.Piano
+                        FileType.DRUM -> Icons.Outlined.Speaker
+                        FileType.MIXDOWN -> Icons.Outlined.MusicNote
+                        FileType.OTHER -> Icons.Outlined.Folder
+                    },
+                    contentDescription = null,
+                    tint = if (isPlaying) TeOrange else TeGreen,
+                    modifier = Modifier.size(36.dp)
                 )
-                Row {
+                
+                Spacer(modifier = Modifier.width(16.dp))
+                
+                // Folder info
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = formatFileSize(file.size),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TeMediumGray
+                        text = folder.folderName,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = if (isPlaying) TeOrange else TeLightGray,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                    Text(
-                        text = " • ${formatDate(file.downloadedAt)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TeMediumGray
+                    Row {
+                        Text(
+                            text = "${folder.fileCount} plików",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TeMediumGray
+                        )
+                        Text(
+                            text = " • ${formatFileSize(folder.totalSize)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TeMediumGray
+                        )
+                        Text(
+                            text = " • ${formatDate(folder.downloadedAt)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TeMediumGray
+                        )
+                    }
+                }
+                
+                // Play button
+                IconButton(onClick = onPlay) {
+                    Icon(
+                        imageVector = Icons.Outlined.PlayCircle,
+                        contentDescription = "Odtwórz",
+                        tint = TeOrange,
+                        modifier = Modifier.size(28.dp)
                     )
                 }
-            }
-            
-            // Favorite button
-            IconButton(onClick = onFavorite) {
+                
+                // Expand icon
                 Icon(
-                    imageVector = if (file.isFavorite) Icons.Filled.Favorite 
-                        else Icons.Outlined.FavoriteBorder,
-                    contentDescription = "Ulubione",
-                    tint = if (file.isFavorite) TeOrange else TeMediumGray
-                )
-            }
-            
-            // Delete button
-            IconButton(onClick = { showDeleteDialog = true }) {
-                Icon(
-                    imageVector = Icons.Outlined.Delete,
-                    contentDescription = "Usuń",
+                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp 
+                        else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (isExpanded) "Zwiń" else "Rozwiń",
                     tint = TeMediumGray
                 )
+            }
+            
+            // Expanded content - file list
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = expandVertically(),
+                exit = shrinkVertically()
+            ) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    HorizontalDivider(color = TeMediumGray.copy(alpha = 0.3f))
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // File list
+                    folder.files.forEach { file ->
+                        FileRow(
+                            file = file,
+                            isPlaying = file.name == currentTrackName,
+                            onClick = { onPlayFile(file) }
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Actions row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        IconButton(onClick = onFavorite) {
+                            Icon(
+                                imageVector = if (folder.isFavorite) Icons.Filled.Favorite 
+                                    else Icons.Outlined.FavoriteBorder,
+                                contentDescription = "Ulubione",
+                                tint = if (folder.isFavorite) TeOrange else TeMediumGray
+                            )
+                        }
+                        IconButton(onClick = { showDeleteDialog = true }) {
+                            Icon(
+                                imageVector = Icons.Outlined.Delete,
+                                contentDescription = "Usuń",
+                                tint = TeMediumGray
+                            )
+                        }
+                    }
+                }
             }
         }
     }
 }
+
+@Composable
+private fun FileRow(
+    file: LocalFileEntity,
+    isPlaying: Boolean,
+    onClick: () -> Unit
+) {
+    val isAudio = file.name.lowercase().let {
+        it.endsWith(".wav") || it.endsWith(".aif") || it.endsWith(".aiff")
+    }
+    
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = isAudio, onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = when {
+                isPlaying -> Icons.Outlined.GraphicEq
+                isAudio -> Icons.Outlined.AudioFile
+                file.name.endsWith(".json") -> Icons.Outlined.Description
+                else -> Icons.Outlined.InsertDriveFile
+            },
+            contentDescription = null,
+            tint = if (isPlaying) TeOrange else if (isAudio) TeGreen else TeMediumGray,
+            modifier = Modifier.size(20.dp)
+        )
+        
+        Spacer(modifier = Modifier.width(12.dp))
+        
+        Text(
+            text = file.name,
+            style = MaterialTheme.typography.bodyMedium,
+            color = if (isPlaying) TeOrange else if (isAudio) TeLightGray else TeMediumGray,
+            modifier = Modifier.weight(1f)
+        )
+        
+        Text(
+            text = formatFileSize(file.size),
+            style = MaterialTheme.typography.bodySmall,
+            color = TeMediumGray
+        )
+    }
+}
+
+
 
 private fun filterLabel(filter: FileTypeFilter): String = when (filter) {
     FileTypeFilter.ALL -> "Wszystko"
@@ -333,7 +450,7 @@ private fun filterLabel(filter: FileTypeFilter): String = when (filter) {
 private fun formatFileSize(bytes: Long): String = when {
     bytes < 1024 -> "$bytes B"
     bytes < 1024 * 1024 -> "${bytes / 1024} KB"
-    else -> "${bytes / (1024 * 1024)} MB"
+    else -> String.format("%.1f MB", bytes / (1024.0 * 1024.0))
 }
 
 private fun formatDate(timestamp: Long): String {

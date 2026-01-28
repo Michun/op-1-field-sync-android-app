@@ -11,9 +11,10 @@ data class LocalFileEntity(
     val path: String,
     val size: Long,
     val type: FileType,
-    val sourcePath: String, // Original path on OP-1
+    val sourcePath: String, // Original path on OP-1 (e.g., "/tapes/2024-150#02/track1.aif")
+    val folderName: String, // Parent folder name (e.g., "2024-150#02" for tapes)
     val downloadedAt: Long = System.currentTimeMillis(),
-    val duration: Long? = null, // For audio files, in milliseconds
+    val duration: Long? = null,
     val isFavorite: Boolean = false
 )
 
@@ -24,3 +25,17 @@ enum class FileType {
     MIXDOWN,
     OTHER
 }
+
+/**
+ * Represents a project folder in the library (e.g., a tape project).
+ * Used for grouping files by their parent folder.
+ */
+data class ProjectFolder(
+    val folderName: String,
+    val type: FileType,
+    val fileCount: Int,
+    val totalSize: Long,
+    val downloadedAt: Long,
+    val isFavorite: Boolean,
+    val files: List<LocalFileEntity> = emptyList()
+)

@@ -15,7 +15,10 @@ interface LocalFileDao {
     @Query("SELECT * FROM local_files WHERE isFavorite = 1 ORDER BY downloadedAt DESC")
     fun getFavorites(): Flow<List<LocalFileEntity>>
     
-    @Query("SELECT * FROM local_files WHERE name LIKE '%' || :query || '%' ORDER BY downloadedAt DESC")
+    @Query("SELECT * FROM local_files WHERE folderName = :folderName ORDER BY name ASC")
+    fun getFilesByFolder(folderName: String): Flow<List<LocalFileEntity>>
+    
+    @Query("SELECT * FROM local_files WHERE name LIKE '%' || :query || '%' OR folderName LIKE '%' || :query || '%' ORDER BY downloadedAt DESC")
     fun searchFiles(query: String): Flow<List<LocalFileEntity>>
     
     @Query("SELECT * FROM local_files WHERE id = :id")
@@ -36,12 +39,21 @@ interface LocalFileDao {
     @Query("DELETE FROM local_files WHERE id = :id")
     suspend fun deleteById(id: Long)
     
+    @Query("DELETE FROM local_files WHERE folderName = :folderName")
+    suspend fun deleteByFolder(folderName: String)
+    
     @Query("UPDATE local_files SET isFavorite = :isFavorite WHERE id = :id")
     suspend fun setFavorite(id: Long, isFavorite: Boolean)
+    
+    @Query("UPDATE local_files SET isFavorite = :isFavorite WHERE folderName = :folderName")
+    suspend fun setFolderFavorite(folderName: String, isFavorite: Boolean)
     
     @Query("SELECT COUNT(*) FROM local_files")
     fun getTotalCount(): Flow<Int>
     
     @Query("SELECT COUNT(*) FROM local_files WHERE type = :type")
     fun getCountByType(type: FileType): Flow<Int>
+    
+    @Query("SELECT DISTINCT folderName FROM local_files WHERE type = :type ORDER BY downloadedAt DESC")
+    fun getFolderNamesByType(type: FileType): Flow<List<String>>
 }
