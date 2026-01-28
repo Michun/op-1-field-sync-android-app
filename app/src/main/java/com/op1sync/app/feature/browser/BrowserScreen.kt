@@ -16,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.op1sync.app.core.download.DownloadStatus
 import com.op1sync.app.ui.components.MiniPlayer
 import com.op1sync.app.ui.theme.*
 import kotlinx.coroutines.delay
@@ -35,12 +36,27 @@ fun BrowserScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val playbackState by viewModel.audioPlayerManager.playbackState.collectAsState()
+    val downloadState by viewModel.downloadManager.downloadState.collectAsState()
+    
+    val snackbarHostState = remember { SnackbarHostState() }
     
     // Update playback position periodically
     LaunchedEffect(playbackState.isPlaying) {
         while (playbackState.isPlaying) {
             delay(100)
             viewModel.audioPlayerManager.updatePosition()
+        }
+    }
+    
+    // Show snackbar for messages
+    LaunchedEffect(uiState.error, uiState.successMessage) {
+        uiState.error?.let { error ->
+            snackbarHostState.showSnackbar(error, duration = SnackbarDuration.Short)
+            viewModel.clearMessages()
+        }
+        uiState.successMessage?.let { success ->
+            snackbarHostState.showSnackbar(success, duration = SnackbarDuration.Short)
+            viewModel.clearMessages()
         }
     }
     
@@ -89,12 +105,70 @@ fun BrowserScreen(
             )
         },
         bottomBar = {
-            MiniPlayer(
-                playbackState = playbackState,
-                onPlayPauseClick = { viewModel.togglePlayPause() },
-                onCloseClick = { viewModel.stopPlayback() },
-                onSeek = { /* TODO: Implement seek */ }
-            )
+            Column {
+                // Folder download progress
+                downloadState.folderDownloadProgress?.let { progress ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        colors = CardDefaults.cardColors(containerColor = TeDarkGray)
+                    ) {
+                        Column(modifier = Modifier.padding(12.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "Pobieranie: ${progress.folderName}",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = TeLightGray
+                                )
+                                Text(
+                                    text = "${progress.completedFiles}/${progress.totalFiles}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TeOrange
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(4.dp))
+                            LinearProgressIndicator(
+                                progress = { 
+                                    if (progress.totalFiles > 0) 
+                                        progress.completedFiles.toFloat() / progress.totalFiles 
+                                    else 0f 
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                color = TeOrange,
+                                trackColor = TeMediumGray,
+                            )
+                            if (progress.currentFile.isNotEmpty()) {
+                                Text(
+                                    text = progress.currentFile,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = TeMediumGray,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+                
+                MiniPlayer(
+                    playbackState = playbackState,
+                    onPlayPauseClick = { viewModel.togglePlayPause() },
+                    onCloseClick = { viewModel.stopPlayback() },
+                    onSeek = { percent -> viewModel.seekTo(percent) }
+                )
+            }
+        },
+        snackbarHost = {
+            SnackbarHost(snackbarHostState) { data ->
+                Snackbar(
+                    snackbarData = data,
+                    containerColor = TeDarkGray,
+                    contentColor = TeLightGray
+                )
+            }
         },
         containerColor = TeBlack
     ) { paddingValues ->
@@ -140,9 +214,14 @@ fun BrowserScreen(
                 item { Spacer(modifier = Modifier.height(8.dp)) }
                 
                 items(uiState.items) { item ->
+                    val downloadItem = downloadState.activeDownloads[item.handle]
+                    
                     FileItemCard(
                         item = item,
                         isPlaying = playbackState.currentTrack?.name == item.name && playbackState.isPlaying,
+                        downloadStatus = downloadItem?.status,
+                        downloadProgress = downloadItem?.progress ?: 0f,
+                        isFolderDownloading = uiState.isFolderDownloading,
                         onClick = {
                             if (item.isDirectory) {
                                 viewModel.navigateToFolder(item)
@@ -150,12 +229,18 @@ fun BrowserScreen(
                                 viewModel.playFile(item)
                             }
                         },
-                        onDownload = { viewModel.downloadFile(item) }
+                        onDownload = { 
+                            if (item.isDirectory) {
+                                viewModel.downloadFolder(item)
+                            } else {
+                                viewModel.downloadFile(item)
+                            }
+                        }
                     )
                 }
                 
                 // Extra space for mini player
-                item { Spacer(modifier = Modifier.height(80.dp)) }
+                item { Spacer(modifier = Modifier.height(120.dp)) }
             }
         }
     }
@@ -165,10 +250,15 @@ fun BrowserScreen(
 private fun FileItemCard(
     item: FileItem,
     isPlaying: Boolean,
+    downloadStatus: DownloadStatus?,
+    downloadProgress: Float,
+    isFolderDownloading: Boolean,
     onClick: () -> Unit,
     onDownload: () -> Unit
 ) {
     val isAudio = isAudioFile(item.name)
+    val isDownloading = downloadStatus == DownloadStatus.InProgress
+    val isDownloaded = downloadStatus == DownloadStatus.Completed
     
     val icon: ImageVector = when {
         item.isDirectory -> Icons.Outlined.Folder
@@ -183,61 +273,103 @@ private fun FileItemCard(
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isPlaying) TeOrange.copy(alpha = 0.15f) else TeDarkGray
+            containerColor = when {
+                isPlaying -> TeOrange.copy(alpha = 0.15f)
+                isDownloaded -> TeGreen.copy(alpha = 0.1f)
+                else -> TeDarkGray
+            }
         )
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = when {
-                    isPlaying -> TeOrange
-                    item.isDirectory -> TeOrange
-                    isAudio -> TeGreen
-                    else -> TeLightGray
-                },
-                modifier = Modifier.size(28.dp)
-            )
-            
-            Spacer(modifier = Modifier.width(16.dp))
-            
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = item.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isPlaying) TeOrange else TeLightGray
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = when {
+                        isPlaying -> TeOrange
+                        item.isDirectory -> TeOrange
+                        isAudio -> TeGreen
+                        else -> TeLightGray
+                    },
+                    modifier = Modifier.size(28.dp)
                 )
-                Row {
-                    if (!item.isDirectory && item.size > 0) {
-                        Text(
-                            text = formatFileSize(item.size),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TeMediumGray
-                        )
+                
+                Spacer(modifier = Modifier.width(16.dp))
+                
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = item.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isPlaying) TeOrange else TeLightGray
+                    )
+                    Row {
+                        if (item.isDirectory) {
+                            Text(
+                                text = "Folder",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TeMediumGray
+                            )
+                        } else if (item.size > 0) {
+                            Text(
+                                text = formatFileSize(item.size),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TeMediumGray
+                            )
+                        }
+                        if (isDownloaded) {
+                            Text(
+                                text = " • Pobrano ✓",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TeGreen
+                            )
+                        }
                     }
-                    if (isAudio && !item.isDirectory) {
-                        Text(
-                            text = " • Kliknij aby odtworzyć",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TeMediumGray
+                }
+                
+                // Download button
+                if (isDownloading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp),
+                        color = TeOrange,
+                        strokeWidth = 2.dp
+                    )
+                } else {
+                    IconButton(
+                        onClick = onDownload,
+                        enabled = !isFolderDownloading || !item.isDirectory
+                    ) {
+                        Icon(
+                            imageVector = when {
+                                isDownloaded -> Icons.Outlined.CheckCircle
+                                item.isDirectory -> Icons.Outlined.FolderCopy
+                                else -> Icons.Outlined.Download
+                            },
+                            contentDescription = if (item.isDirectory) "Pobierz folder" else "Pobierz",
+                            tint = when {
+                                isDownloaded -> TeGreen
+                                isFolderDownloading && item.isDirectory -> TeMediumGray
+                                else -> TeOrange
+                            }
                         )
                     }
                 }
             }
             
-            if (!item.isDirectory) {
-                IconButton(onClick = onDownload) {
-                    Icon(
-                        imageVector = Icons.Outlined.Download,
-                        contentDescription = "Pobierz",
-                        tint = TeOrange
-                    )
-                }
+            // Download progress bar
+            if (isDownloading) {
+                LinearProgressIndicator(
+                    progress = { downloadProgress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(3.dp),
+                    color = TeOrange,
+                    trackColor = TeMediumGray,
+                )
             }
         }
     }

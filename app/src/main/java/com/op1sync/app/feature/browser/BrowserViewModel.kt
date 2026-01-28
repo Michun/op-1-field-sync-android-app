@@ -4,14 +4,14 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.op1sync.app.core.audio.AudioPlayerManager
+import com.op1sync.app.core.download.DownloadManager
+import com.op1sync.app.core.download.DownloadStatus
 import com.op1sync.app.core.usb.MtpConnectionManager
+import com.op1sync.app.data.repository.LibraryRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -23,13 +23,16 @@ data class BrowserUiState(
     val isLoading: Boolean = false,
     val canGoBack: Boolean = false,
     val error: String? = null,
-    val downloadProgress: Map<Int, Float> = emptyMap() // handle -> progress
+    val successMessage: String? = null,
+    val isFolderDownloading: Boolean = false
 )
 
 @HiltViewModel
 class BrowserViewModel @Inject constructor(
     private val mtpConnectionManager: MtpConnectionManager,
     val audioPlayerManager: AudioPlayerManager,
+    val downloadManager: DownloadManager,
+    private val libraryRepository: LibraryRepository,
     @ApplicationContext private val context: Context
 ) : ViewModel() {
     
@@ -46,6 +49,17 @@ class BrowserViewModel @Inject constructor(
     
     init {
         loadRootDirectory()
+        observeFolderDownloadState()
+    }
+    
+    private fun observeFolderDownloadState() {
+        viewModelScope.launch {
+            downloadManager.downloadState.collect { state ->
+                _uiState.update { 
+                    it.copy(isFolderDownloading = state.folderDownloadProgress != null)
+                }
+            }
+        }
     }
     
     private fun loadRootDirectory() {
@@ -183,30 +197,117 @@ class BrowserViewModel @Inject constructor(
     }
     
     fun downloadFile(item: FileItem) {
+        if (downloadManager.isDownloading(item.handle)) return
+        
+        // Build relative path (remove leading /)
+        val relativePath = _uiState.value.currentPath.removePrefix("/")
+        val sourcePath = _uiState.value.currentPath + "/" + item.name
+        
         viewModelScope.launch {
-            withContext(Dispatchers.IO) {
-                try {
-                    val mtp = mtpConnectionManager.getMtpDevice() ?: return@withContext
-                    
-                    // Get app's external files directory
-                    val destDir = android.os.Environment.getExternalStoragePublicDirectory(
-                        android.os.Environment.DIRECTORY_MUSIC
+            val mtp = mtpConnectionManager.getMtpDevice()
+            if (mtp == null) {
+                _uiState.update { it.copy(error = "Urządzenie nie jest połączone") }
+                return@launch
+            }
+            
+            val result = downloadManager.downloadFile(
+                mtpDevice = mtp,
+                handle = item.handle,
+                name = item.name,
+                size = item.size,
+                relativePath = relativePath
+            )
+            
+            result.onSuccess { path ->
+                // Save to library database
+                viewModelScope.launch {
+                    libraryRepository.addFile(
+                        name = item.name,
+                        path = path,
+                        size = item.size,
+                        sourcePath = sourcePath
                     )
-                    val destFile = File(destDir, "OP1Sync/${item.name}")
-                    destFile.parentFile?.mkdirs()
-                    
-                    mtp.importFile(item.handle, destFile.absolutePath)
-                    
-                    // TODO: Show success notification
-                } catch (e: Exception) {
-                    _uiState.update { it.copy(error = "Nie udało się pobrać: ${e.message}") }
+                }
+                _uiState.update { 
+                    it.copy(successMessage = "Pobrano: ${item.name}")
+                }
+            }.onFailure { e ->
+                _uiState.update { 
+                    it.copy(error = "Błąd pobierania: ${e.message}")
                 }
             }
         }
     }
     
+    /**
+     * Download entire folder with all files recursively.
+     */
+    fun downloadFolder(item: FileItem) {
+        if (!item.isDirectory) return
+        if (downloadManager.isFolderDownloading()) {
+            _uiState.update { it.copy(error = "Już trwa pobieranie folderu") }
+            return
+        }
+        
+        val basePath = _uiState.value.currentPath.removePrefix("/")
+        
+        viewModelScope.launch {
+            val mtp = mtpConnectionManager.getMtpDevice()
+            val storageId = mtpConnectionManager.getStorageId()
+            
+            if (mtp == null || storageId == null) {
+                _uiState.update { it.copy(error = "Urządzenie nie jest połączone") }
+                return@launch
+            }
+            
+            _uiState.update { it.copy(successMessage = "Pobieranie folderu: ${item.name}...") }
+            
+            val result = downloadManager.downloadFolder(
+                mtpDevice = mtp,
+                storageId = storageId,
+                folderHandle = item.handle,
+                folderName = item.name,
+                basePath = basePath,
+                onFileCompleted = { name, path ->
+                    // Save each file to library
+                    viewModelScope.launch {
+                        val sourcePath = if (basePath.isEmpty()) {
+                            "/${item.name}/$name"
+                        } else {
+                            "/$basePath/${item.name}/$name"
+                        }
+                        libraryRepository.addFile(
+                            name = name,
+                            path = path,
+                            size = File(path).length(),
+                            sourcePath = sourcePath
+                        )
+                    }
+                }
+            )
+            
+            result.onSuccess { paths ->
+                _uiState.update { 
+                    it.copy(successMessage = "Pobrano ${paths.size} plików z ${item.name}")
+                }
+            }.onFailure { e ->
+                _uiState.update { 
+                    it.copy(error = "Błąd pobierania folderu: ${e.message}")
+                }
+            }
+        }
+    }
+    
+    fun clearMessages() {
+        _uiState.update { it.copy(error = null, successMessage = null) }
+    }
+    
     fun togglePlayPause() {
         audioPlayerManager.togglePlayPause()
+    }
+    
+    fun seekTo(percent: Float) {
+        audioPlayerManager.seekToPercent(percent)
     }
     
     fun stopPlayback() {
@@ -220,7 +321,6 @@ class BrowserViewModel @Inject constructor(
     
     override fun onCleared() {
         super.onCleared()
-        // Don't release player here as it's singleton, only stop current playback
         audioPlayerManager.stop()
     }
 }
