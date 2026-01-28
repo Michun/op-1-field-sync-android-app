@@ -35,12 +35,13 @@ import kotlinx.coroutines.delay
 /**
  * Drum screen with category-based navigation.
  * Shows category tiles (slots, user, then others), drilling down to file lists.
- * Patches show metadata only (no playback).
+ * Clicking a patch opens the drum keyboard for playback.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DrumScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToDrumKeyboard: (String) -> Unit = {},
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -56,15 +57,6 @@ fun DrumScreen(
     // Group folders by their subcategory (second level folder name)
     val categories = remember(uiState.filteredFolders) {
         groupFoldersByCategory(uiState.filteredFolders)
-    }
-    
-    // Show patch info dialog (info only, no playback for patches)
-    uiState.selectedPatchMetadata?.let { metadata ->
-        PatchInfoDialog(
-            metadata = metadata,
-            fileName = uiState.selectedFile?.name ?: "",
-            onDismiss = { viewModel.dismissPatchMetadata() }
-        )
     }
     
     Scaffold(
@@ -118,13 +110,14 @@ fun DrumScreen(
                         modifier = Modifier.fillMaxSize().padding(paddingValues)
                     )
                 } else {
-                    // Show files in selected category (info only)
+                    // Show files in selected category - click opens keyboard
                     PatchFilesView(
                         categoryName = category,
                         folders = categories[category] ?: emptyList(),
                         isSlots = category.equals("slots", ignoreCase = true),
                         onFileClick = { file ->
-                            viewModel.showPatchMetadata(file)
+                            // Navigate to drum keyboard with file path
+                            onNavigateToDrumKeyboard(file.path)
                         },
                         modifier = Modifier.fillMaxSize().padding(paddingValues)
                     )
@@ -133,6 +126,7 @@ fun DrumScreen(
         }
     }
 }
+
 
 /**
  * Synth screen with category-based navigation.

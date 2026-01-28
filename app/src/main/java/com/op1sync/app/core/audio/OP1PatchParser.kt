@@ -20,6 +20,7 @@ class OP1PatchParser @Inject constructor() {
         private const val TAG = "OP1PatchParser"
         private const val FORM_ID = "FORM"
         private const val APPL_ID = "APPL"
+        private const val SSND_ID = "SSND"
         private const val OP1_SIGNATURE = "op-1"
     }
     
@@ -81,6 +82,100 @@ class OP1PatchParser @Inject constructor() {
         }
     }
     
+    /**
+     * Parse a drum patch file and extract sample data for playback.
+     * Returns DrumSampleData with SSND sound data and sample boundaries.
+     */
+    suspend fun parseDrumSamples(file: File): DrumSampleData? = withContext(Dispatchers.IO) {
+        if (!file.exists() || !file.name.lowercase().endsWith(".aif")) {
+            return@withContext null
+        }
+        
+        try {
+            RandomAccessFile(file, "r").use { raf ->
+                var applJson: JSONObject? = null
+                var ssndData: ByteArray? = null
+                
+                // Read FORM header
+                val formId = ByteArray(4)
+                raf.readFully(formId)
+                if (String(formId) != FORM_ID) {
+                    Log.w(TAG, "Not a FORM file: ${file.name}")
+                    return@withContext null
+                }
+                
+                // Skip file size (4 bytes) and form type (4 bytes = AIFC/AIFF)
+                raf.skipBytes(8)
+                
+                // Search for APPL and SSND chunks
+                while (raf.filePointer < raf.length() - 8) {
+                    val chunkId = ByteArray(4)
+                    if (raf.read(chunkId) != 4) break
+                    
+                    val chunkSize = raf.readInt()
+                    val chunkIdStr = String(chunkId)
+                    
+                    when (chunkIdStr) {
+                        APPL_ID -> {
+                            // Read signature (4 bytes)
+                            val signature = ByteArray(4)
+                            raf.readFully(signature)
+                            
+                            if (String(signature) == OP1_SIGNATURE) {
+                                val jsonBytes = ByteArray(chunkSize - 4)
+                                raf.readFully(jsonBytes)
+                                val jsonStr = String(jsonBytes).trim('\u0000', ' ')
+                                applJson = JSONObject(jsonStr)
+                            } else {
+                                raf.skipBytes(chunkSize - 4)
+                            }
+                        }
+                        SSND_ID -> {
+                            // Read SSND chunk
+                            val offset = raf.readInt()
+                            val blockSize = raf.readInt()
+                            val soundData = ByteArray(chunkSize - 8)
+                            raf.readFully(soundData)
+                            ssndData = soundData
+                            Log.d(TAG, "SSND chunk: ${soundData.size} bytes, offset=$offset, blockSize=$blockSize")
+                        }
+                        else -> {
+                            // Skip other chunks (with padding to even boundary)
+                            val skipSize = if (chunkSize % 2 == 1) chunkSize + 1 else chunkSize
+                            raf.skipBytes(skipSize)
+                        }
+                    }
+                    
+                    // Stop if we have both
+                    if (applJson != null && ssndData != null) break
+                }
+                
+                // Extract sample boundaries from JSON
+                if (applJson != null && ssndData != null) {
+                    val startArray = applJson.optJSONArray("start") ?: return@withContext null
+                    val endArray = applJson.optJSONArray("end") ?: return@withContext null
+                    
+                    val startPositions = (0 until startArray.length()).map { startArray.getInt(it) }
+                    val endPositions = (0 until endArray.length()).map { endArray.getInt(it) }
+                    
+                    return@withContext DrumSampleData(
+                        name = applJson.optString("name", file.nameWithoutExtension),
+                        type = applJson.optString("type", "drum"),
+                        ssndData = ssndData,
+                        startPositions = startPositions,
+                        endPositions = endPositions
+                    )
+                }
+                
+                Log.w(TAG, "Missing APPL or SSND chunk in ${file.name}")
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parsing drum samples from ${file.name}", e)
+            null
+        }
+    }
+    
     private fun parseJson(jsonStr: String, fileName: String): OP1PatchMetadata? {
         return try {
             val json = JSONObject(jsonStr)
@@ -121,6 +216,30 @@ class OP1PatchParser @Inject constructor() {
             lfoType = json.optString("lfo_type", "none"),
             lfoActive = json.optBoolean("lfo_active", false)
         )
+    }
+}
+
+/**
+ * Data class containing drum sample data for playback.
+ */
+data class DrumSampleData(
+    val name: String,
+    val type: String,
+    val ssndData: ByteArray,
+    val startPositions: List<Int>,
+    val endPositions: List<Int>
+) {
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (javaClass != other?.javaClass) return false
+        other as DrumSampleData
+        return name == other.name && ssndData.contentEquals(other.ssndData)
+    }
+    
+    override fun hashCode(): Int {
+        var result = name.hashCode()
+        result = 31 * result + ssndData.contentHashCode()
+        return result
     }
 }
 

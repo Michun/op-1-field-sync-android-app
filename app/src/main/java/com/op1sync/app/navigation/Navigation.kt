@@ -14,9 +14,13 @@ import com.op1sync.app.feature.library.LibraryScreen
 import com.op1sync.app.feature.library.TapesScreen
 import com.op1sync.app.feature.library.SynthScreen
 import com.op1sync.app.feature.library.DrumScreen
+import com.op1sync.app.feature.library.DrumKeyboardScreen
 import com.op1sync.app.feature.library.MixdownScreen
 import com.op1sync.app.feature.backup.BackupScreen
 import com.op1sync.app.feature.settings.SettingsScreen
+import java.net.URLDecoder
+import java.net.URLEncoder
+import java.nio.charset.StandardCharsets
 
 sealed class Screen(val route: String) {
     data object Home : Screen("home")
@@ -25,6 +29,12 @@ sealed class Screen(val route: String) {
     data object Tapes : Screen("library/tapes")
     data object Synth : Screen("library/synth")
     data object Drum : Screen("library/drum")
+    data object DrumKeyboard : Screen("library/drum/keyboard/{filePath}") {
+        fun createRoute(filePath: String): String {
+            val encoded = URLEncoder.encode(filePath, StandardCharsets.UTF_8.toString())
+            return "library/drum/keyboard/$encoded"
+        }
+    }
     data object Mixdown : Screen("library/mixdown")
     data object Backup : Screen("backup")
     data object Settings : Screen("settings")
@@ -72,6 +82,22 @@ fun OP1SyncNavHost(
         }
         composable(Screen.Drum.route) {
             DrumScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToDrumKeyboard = { filePath ->
+                    navController.navigate(Screen.DrumKeyboard.createRoute(filePath))
+                }
+            )
+        }
+        composable(
+            route = Screen.DrumKeyboard.route,
+            arguments = listOf(
+                navArgument("filePath") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val encodedPath = backStackEntry.arguments?.getString("filePath") ?: ""
+            val filePath = URLDecoder.decode(encodedPath, StandardCharsets.UTF_8.toString())
+            DrumKeyboardScreen(
+                filePath = filePath,
                 onNavigateBack = { navController.popBackStack() }
             )
         }
