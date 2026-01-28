@@ -26,6 +26,10 @@ import com.op1sync.app.ui.theme.*
 fun HomeScreen(
     onNavigateToBrowser: () -> Unit,
     onNavigateToLibrary: () -> Unit,
+    onNavigateToTapes: () -> Unit,
+    onNavigateToSynth: () -> Unit,
+    onNavigateToDrum: () -> Unit,
+    onNavigateToMixdown: () -> Unit,
     onNavigateToBackup: () -> Unit,
     onNavigateToSettings: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
@@ -126,14 +130,14 @@ fun HomeScreen(
                         icon = Icons.Outlined.Album,
                         title = "TAŚMY",
                         count = uiState.tapesCount,
-                        onClick = onNavigateToLibrary,
+                        onClick = onNavigateToTapes,
                         modifier = Modifier.weight(1f)
                     )
                     CategoryCard(
                         icon = Icons.Outlined.Piano,
                         title = "SYNTH",
                         count = uiState.synthCount,
-                        onClick = onNavigateToLibrary,
+                        onClick = onNavigateToSynth,
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -148,14 +152,14 @@ fun HomeScreen(
                         icon = Icons.Outlined.Sensors,
                         title = "DRUM",
                         count = uiState.drumCount,
-                        onClick = onNavigateToLibrary,
+                        onClick = onNavigateToDrum,
                         modifier = Modifier.weight(1f)
                     )
                     CategoryCard(
                         icon = Icons.Outlined.MusicNote,
                         title = "MIKSY",
                         count = uiState.mixdownCount,
-                        onClick = onNavigateToLibrary,
+                        onClick = onNavigateToMixdown,
                         modifier = Modifier.weight(1f)
                     )
                 }

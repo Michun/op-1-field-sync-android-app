@@ -60,10 +60,13 @@ class DownloadManager @Inject constructor(
     val downloadState: StateFlow<DownloadState> = _downloadState.asStateFlow()
     
     private val downloadDir: File by lazy {
-        File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_MUSIC),
-            DOWNLOAD_FOLDER
-        ).also { it.mkdirs() }
+        // Use app-specific external storage - no permissions needed on Android 10+
+        // Files are stored in /Android/data/com.op1sync.app/files/OP1Sync/
+        val appDir = context.getExternalFilesDir(null)
+        File(appDir, DOWNLOAD_FOLDER).also { 
+            val created = it.mkdirs()
+            Log.d(TAG, "Download dir: ${it.absolutePath}, exists: ${it.exists()}, created: $created")
+        }
     }
     
     /**
@@ -160,7 +163,7 @@ class DownloadManager @Inject constructor(
         folderHandle: Int,
         folderName: String,
         basePath: String = "",
-        onFileCompleted: ((String, String) -> Unit)? = null // (name, localPath)
+        onFileCompleted: ((name: String, localPath: String, sourcePath: String) -> Unit)? = null
     ): Result<List<String>> = withContext(Dispatchers.IO) {
         
         val downloadedPaths = mutableListOf<String>()
@@ -208,7 +211,9 @@ class DownloadManager @Inject constructor(
                 
                 result.onSuccess { path ->
                     downloadedPaths.add(path)
-                    onFileCompleted?.invoke(item.name, path)
+                    // Pass the full source path including subcategory
+                    val sourcePath = "/${item.relativePath}/${item.name}"
+                    onFileCompleted?.invoke(item.name, path, sourcePath)
                 }
                 
                 completed++
@@ -239,12 +244,29 @@ class DownloadManager @Inject constructor(
     ): List<FolderItem> {
         val items = mutableListOf<FolderItem>()
         
-        val handles = mtpDevice.getObjectHandles(storageId, 0, parentHandle) ?: return items
+        Log.d(TAG, "collectFolderItems: storageId=$storageId, parentHandle=$parentHandle, path=$currentPath")
+        
+        val handles = mtpDevice.getObjectHandles(storageId, 0, parentHandle)
+        
+        if (handles == null) {
+            Log.w(TAG, "getObjectHandles returned null for parentHandle=$parentHandle")
+            return items
+        }
+        
+        Log.d(TAG, "Found ${handles.size} items in $currentPath")
         
         for (handle in handles) {
-            val info = mtpDevice.getObjectInfo(handle) ?: continue
+            val info = mtpDevice.getObjectInfo(handle)
+            if (info == null) {
+                Log.w(TAG, "getObjectInfo returned null for handle=$handle")
+                continue
+            }
+            
             val name = info.name ?: continue
-            val isDirectory = info.format == 0x3001
+            // MTP format codes: 0x3001 = folder, 0x3000 = undefined, others = specific formats
+            val isDirectory = info.format == 0x3001 || info.format == 0x3000 && info.compressedSize == 0
+            
+            Log.d(TAG, "  Item: $name (format=${info.format}, size=${info.compressedSize}, isDir=$isDirectory)")
             
             if (isDirectory) {
                 // Recurse into subdirectory

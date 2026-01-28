@@ -268,14 +268,9 @@ class BrowserViewModel @Inject constructor(
                 folderHandle = item.handle,
                 folderName = item.name,
                 basePath = basePath,
-                onFileCompleted = { name, path ->
-                    // Save each file to library
+                onFileCompleted = { name, path, sourcePath ->
+                    // Save each file to library with correct source path
                     viewModelScope.launch {
-                        val sourcePath = if (basePath.isEmpty()) {
-                            "/${item.name}/$name"
-                        } else {
-                            "/$basePath/${item.name}/$name"
-                        }
                         libraryRepository.addFile(
                             name = name,
                             path = path,
