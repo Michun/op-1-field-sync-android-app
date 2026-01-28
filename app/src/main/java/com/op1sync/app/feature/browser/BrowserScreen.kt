@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.InsertDriveFile
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,7 +16,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.op1sync.app.ui.components.MiniPlayer
 import com.op1sync.app.ui.theme.*
+import kotlinx.coroutines.delay
 
 data class FileItem(
     val name: String,
@@ -31,6 +34,15 @@ fun BrowserScreen(
     viewModel: BrowserViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val playbackState by viewModel.audioPlayerManager.playbackState.collectAsState()
+    
+    // Update playback position periodically
+    LaunchedEffect(playbackState.isPlaying) {
+        while (playbackState.isPlaying) {
+            delay(100)
+            viewModel.audioPlayerManager.updatePosition()
+        }
+    }
     
     Scaffold(
         topBar = {
@@ -74,6 +86,14 @@ fun BrowserScreen(
                     containerColor = TeBlack,
                     titleContentColor = TeLightGray
                 )
+            )
+        },
+        bottomBar = {
+            MiniPlayer(
+                playbackState = playbackState,
+                onPlayPauseClick = { viewModel.togglePlayPause() },
+                onCloseClick = { viewModel.stopPlayback() },
+                onSeek = { /* TODO: Implement seek */ }
             )
         },
         containerColor = TeBlack
@@ -122,18 +142,20 @@ fun BrowserScreen(
                 items(uiState.items) { item ->
                     FileItemCard(
                         item = item,
+                        isPlaying = playbackState.currentTrack?.name == item.name && playbackState.isPlaying,
                         onClick = {
                             if (item.isDirectory) {
                                 viewModel.navigateToFolder(item)
-                            } else {
-                                viewModel.selectFile(item)
+                            } else if (isAudioFile(item.name)) {
+                                viewModel.playFile(item)
                             }
                         },
                         onDownload = { viewModel.downloadFile(item) }
                     )
                 }
                 
-                item { Spacer(modifier = Modifier.height(16.dp)) }
+                // Extra space for mini player
+                item { Spacer(modifier = Modifier.height(80.dp)) }
             }
         }
     }
@@ -142,14 +164,17 @@ fun BrowserScreen(
 @Composable
 private fun FileItemCard(
     item: FileItem,
+    isPlaying: Boolean,
     onClick: () -> Unit,
     onDownload: () -> Unit
 ) {
+    val isAudio = isAudioFile(item.name)
+    
     val icon: ImageVector = when {
         item.isDirectory -> Icons.Outlined.Folder
-        item.name.endsWith(".wav") || item.name.endsWith(".aif") -> Icons.Outlined.AudioFile
+        isAudio -> if (isPlaying) Icons.Outlined.GraphicEq else Icons.Outlined.AudioFile
         item.name.endsWith(".json") -> Icons.Outlined.Description
-        else -> Icons.Outlined.InsertDriveFile
+        else -> Icons.AutoMirrored.Outlined.InsertDriveFile
     }
     
     Card(
@@ -157,7 +182,9 @@ private fun FileItemCard(
             .fillMaxWidth()
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = TeDarkGray)
+        colors = CardDefaults.cardColors(
+            containerColor = if (isPlaying) TeOrange.copy(alpha = 0.15f) else TeDarkGray
+        )
     ) {
         Row(
             modifier = Modifier
@@ -168,7 +195,12 @@ private fun FileItemCard(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                tint = if (item.isDirectory) TeOrange else TeLightGray,
+                tint = when {
+                    isPlaying -> TeOrange
+                    item.isDirectory -> TeOrange
+                    isAudio -> TeGreen
+                    else -> TeLightGray
+                },
                 modifier = Modifier.size(28.dp)
             )
             
@@ -178,14 +210,23 @@ private fun FileItemCard(
                 Text(
                     text = item.name,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = TeLightGray
+                    color = if (isPlaying) TeOrange else TeLightGray
                 )
-                if (!item.isDirectory && item.size > 0) {
-                    Text(
-                        text = formatFileSize(item.size),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TeMediumGray
-                    )
+                Row {
+                    if (!item.isDirectory && item.size > 0) {
+                        Text(
+                            text = formatFileSize(item.size),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TeMediumGray
+                        )
+                    }
+                    if (isAudio && !item.isDirectory) {
+                        Text(
+                            text = " • Kliknij aby odtworzyć",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TeMediumGray
+                        )
+                    }
                 }
             }
             
@@ -200,6 +241,11 @@ private fun FileItemCard(
             }
         }
     }
+}
+
+private fun isAudioFile(name: String): Boolean {
+    val lower = name.lowercase()
+    return lower.endsWith(".wav") || lower.endsWith(".aif") || lower.endsWith(".aiff")
 }
 
 private fun formatFileSize(bytes: Long): String {

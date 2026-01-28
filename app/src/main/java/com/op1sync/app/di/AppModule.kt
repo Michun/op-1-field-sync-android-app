@@ -1,6 +1,7 @@
 package com.op1sync.app.di
 
 import android.content.Context
+import com.op1sync.app.core.audio.AudioPlayerManager
 import com.op1sync.app.core.usb.MtpConnectionManager
 import dagger.Module
 import dagger.Provides
@@ -20,4 +21,13 @@ object AppModule {
     ): MtpConnectionManager {
         return MtpConnectionManager(context)
     }
+    
+    @Provides
+    @Singleton
+    fun provideAudioPlayerManager(
+        @ApplicationContext context: Context
+    ): AudioPlayerManager {
+        return AudioPlayerManager(context)
+    }
 }
+

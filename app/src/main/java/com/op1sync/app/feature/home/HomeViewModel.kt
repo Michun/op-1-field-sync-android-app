@@ -44,12 +44,23 @@ class HomeViewModel @Inject constructor(
                 _uiState.update { 
                     it.copy(
                         isConnected = state.isConnected,
-                        deviceName = state.deviceName
+                        deviceName = state.deviceName,
+                        error = state.errorMessage
                     )
                 }
                 
                 if (state.isConnected) {
                     loadDeviceStats()
+                } else {
+                    // Reset stats when disconnected
+                    _uiState.update {
+                        it.copy(
+                            tapesCount = 0,
+                            synthCount = 0,
+                            drumCount = 0,
+                            mixdownCount = 0
+                        )
+                    }
                 }
             }
         }
