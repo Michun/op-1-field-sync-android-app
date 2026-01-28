@@ -60,8 +60,13 @@ class LibraryRepository @Inject constructor(
         return files
             .groupBy { it.folderName }
             .map { (folderName, folderFiles) ->
+                // Get folder path from first file's path
+                val firstFilePath = folderFiles.first().path
+                val folderPath = java.io.File(firstFilePath).parent ?: ""
+                
                 ProjectFolder(
                     folderName = folderName,
+                    folderPath = folderPath,
                     type = folderFiles.first().type,
                     fileCount = folderFiles.size,
                     totalSize = folderFiles.sumOf { it.size },

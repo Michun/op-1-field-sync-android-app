@@ -32,6 +32,7 @@ enum class FileType {
  */
 data class ProjectFolder(
     val folderName: String,
+    val folderPath: String,
     val type: FileType,
     val fileCount: Int,
     val totalSize: Long,

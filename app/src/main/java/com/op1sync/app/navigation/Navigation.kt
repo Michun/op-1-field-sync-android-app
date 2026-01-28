@@ -15,6 +15,7 @@ import com.op1sync.app.feature.library.TapesScreen
 import com.op1sync.app.feature.library.SynthScreen
 import com.op1sync.app.feature.library.DrumScreen
 import com.op1sync.app.feature.library.DrumKeyboardScreen
+import com.op1sync.app.feature.library.TapeProjectScreen
 import com.op1sync.app.feature.library.MixdownScreen
 import com.op1sync.app.feature.backup.BackupScreen
 import com.op1sync.app.feature.settings.SettingsScreen
@@ -33,6 +34,12 @@ sealed class Screen(val route: String) {
         fun createRoute(filePath: String): String {
             val encoded = URLEncoder.encode(filePath, StandardCharsets.UTF_8.toString())
             return "library/drum/keyboard/$encoded"
+        }
+    }
+    data object TapeProject : Screen("library/tapes/project/{folderPath}") {
+        fun createRoute(folderPath: String): String {
+            val encoded = URLEncoder.encode(folderPath, StandardCharsets.UTF_8.toString())
+            return "library/tapes/project/$encoded"
         }
     }
     data object Mixdown : Screen("library/mixdown")
@@ -72,6 +79,22 @@ fun OP1SyncNavHost(
         }
         composable(Screen.Tapes.route) {
             TapesScreen(
+                onNavigateBack = { navController.popBackStack() },
+                onNavigateToProject = { folderPath ->
+                    navController.navigate(Screen.TapeProject.createRoute(folderPath))
+                }
+            )
+        }
+        composable(
+            route = Screen.TapeProject.route,
+            arguments = listOf(
+                navArgument("folderPath") { type = NavType.StringType }
+            )
+        ) { backStackEntry ->
+            val encodedPath = backStackEntry.arguments?.getString("folderPath") ?: ""
+            val folderPath = URLDecoder.decode(encodedPath, StandardCharsets.UTF_8.toString())
+            TapeProjectScreen(
+                folderPath = folderPath,
                 onNavigateBack = { navController.popBackStack() }
             )
         }

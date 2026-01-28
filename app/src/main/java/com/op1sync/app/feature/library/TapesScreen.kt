@@ -17,38 +17,28 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.op1sync.app.data.local.FileType
 import com.op1sync.app.data.local.ProjectFolder
-import com.op1sync.app.ui.components.MiniPlayer
 import com.op1sync.app.ui.theme.*
-import kotlinx.coroutines.delay
 import java.text.SimpleDateFormat
 import java.util.*
 
 /**
- * Tapes screen - displays tape projects with track-based view.
- * Each tape is a multi-track project with multiple .aif files.
+ * Tapes screen - displays list of tape projects.
+ * Clicking a project navigates to TapeProjectScreen.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TapesScreen(
     onNavigateBack: () -> Unit,
+    onNavigateToProject: (String) -> Unit,
     viewModel: LibraryViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val playbackState by viewModel.audioPlayerManager.playbackState.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     
     // Filter to tapes only
     LaunchedEffect(Unit) {
         viewModel.setFilter(FileTypeFilter.TAPES)
-    }
-    
-    LaunchedEffect(playbackState.isPlaying) {
-        while (playbackState.isPlaying) {
-            delay(100)
-            viewModel.audioPlayerManager.updatePosition()
-        }
     }
     
     LaunchedEffect(uiState.error, uiState.successMessage) {
@@ -94,14 +84,6 @@ fun TapesScreen(
                 )
             )
         },
-        bottomBar = {
-            MiniPlayer(
-                playbackState = playbackState,
-                onPlayPauseClick = { viewModel.togglePlayPause() },
-                onCloseClick = { viewModel.stopPlayback() },
-                onSeek = { viewModel.seekTo(it) }
-            )
-        },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         containerColor = TeBlack
     ) { paddingValues ->
@@ -126,7 +108,7 @@ fun TapesScreen(
                     .fillMaxSize()
                     .padding(paddingValues)
                     .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp)
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 item {
                     Text(
@@ -138,32 +120,24 @@ fun TapesScreen(
                 }
                 
                 items(tapeFolders) { folder ->
-                    TapeProjectCard(
+                    TapeProjectListItem(
                         folder = folder,
-                        isPlaying = playbackState.currentTrack?.let { track ->
-                            folder.files.any { it.name == track.name }
-                        } ?: false,
-                        currentTrackName = playbackState.currentTrack?.name,
-                        onPlay = { viewModel.playFirstInFolder(folder) },
-                        onPlayTrack = { viewModel.playFile(it) },
+                        onClick = { onNavigateToProject(folder.folderPath) },
                         onFavorite = { viewModel.toggleFolderFavorite(folder) },
                         onDelete = { viewModel.deleteFolder(folder) }
                     )
                 }
                 
-                item { Spacer(modifier = Modifier.height(100.dp)) }
+                item { Spacer(modifier = Modifier.height(24.dp)) }
             }
         }
     }
 }
 
 @Composable
-private fun TapeProjectCard(
+private fun TapeProjectListItem(
     folder: ProjectFolder,
-    isPlaying: Boolean,
-    currentTrackName: String?,
-    onPlay: () -> Unit,
-    onPlayTrack: (com.op1sync.app.data.local.LocalFileEntity) -> Unit,
+    onClick: () -> Unit,
     onFavorite: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -185,103 +159,60 @@ private fun TapeProjectCard(
     }
     
     Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isPlaying) TeOrange.copy(alpha = 0.1f) else TeDarkGray
-        )
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = TeDarkGray)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            // Header
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = folder.folderName,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = if (isPlaying) TeOrange else TeLightGray,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = "${folder.fileCount} ścieżek • ${formatSize(folder.totalSize)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TeMediumGray
-                    )
-                }
-                
-                IconButton(onClick = onFavorite) {
-                    Icon(
-                        imageVector = if (folder.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
-                        contentDescription = "Ulubione",
-                        tint = if (folder.isFavorite) TeOrange else TeMediumGray
-                    )
-                }
-                
-                FilledIconButton(
-                    onClick = onPlay,
-                    colors = IconButtonDefaults.filledIconButtonColors(containerColor = TeOrange)
-                ) {
-                    Icon(Icons.Outlined.PlayArrow, "Odtwórz", tint = TeWhite)
-                }
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Album icon
+            Icon(
+                imageVector = Icons.Outlined.Album,
+                contentDescription = null,
+                tint = TeOrange,
+                modifier = Modifier.size(40.dp)
+            )
+            
+            Spacer(Modifier.width(16.dp))
+            
+            // Project info
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = folder.folderName,
+                    style = MaterialTheme.typography.titleMedium,
+                    color = TeLightGray,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${folder.fileCount} plików • ${formatSize(folder.totalSize)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TeMediumGray
+                )
             }
             
-            Spacer(modifier = Modifier.height(12.dp))
-            HorizontalDivider(color = TeMediumGray.copy(alpha = 0.3f))
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Track list (only audio files)
-            val audioTracks = folder.files.filter { 
-                it.name.lowercase().let { n -> n.endsWith(".aif") || n.endsWith(".wav") }
+            // Favorite button
+            IconButton(onClick = onFavorite) {
+                Icon(
+                    imageVector = if (folder.isFavorite) Icons.Filled.Favorite else Icons.Outlined.FavoriteBorder,
+                    contentDescription = "Ulubione",
+                    tint = if (folder.isFavorite) TeOrange else TeMediumGray
+                )
             }
             
-            audioTracks.forEachIndexed { index, track ->
-                val isTrackPlaying = track.name == currentTrackName
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onPlayTrack(track) }
-                        .padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "${index + 1}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (isTrackPlaying) TeOrange else TeMediumGray,
-                        modifier = Modifier.width(24.dp)
-                    )
-                    Icon(
-                        imageVector = if (isTrackPlaying) Icons.Outlined.GraphicEq else Icons.Outlined.AudioFile,
-                        contentDescription = null,
-                        tint = if (isTrackPlaying) TeOrange else TeGreen,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = track.name.removeSuffix(".aif").removeSuffix(".wav"),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = if (isTrackPlaying) TeOrange else TeLightGray,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        text = formatSize(track.size),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = TeMediumGray
-                    )
-                }
-            }
-            
-            // Delete button
-            Spacer(modifier = Modifier.height(8.dp))
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = { showDeleteDialog = true }) {
-                    Icon(Icons.Outlined.Delete, null, tint = TeMediumGray, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Usuń", color = TeMediumGray, style = MaterialTheme.typography.bodySmall)
-                }
-            }
+            // Arrow indicating navigation
+            Icon(
+                imageVector = Icons.Outlined.ChevronRight,
+                contentDescription = null,
+                tint = TeMediumGray,
+                modifier = Modifier.size(24.dp)
+            )
         }
     }
 }
