@@ -161,7 +161,8 @@ fun TapeSeekBar(
 }
 
 /**
- * Playback control buttons: Play, Pause, Stop.
+ * Playback control buttons: Play and Stop.
+ * Styled like OP-1 hardware buttons with 3D effect.
  */
 @Composable
 fun TapeControls(
@@ -176,53 +177,75 @@ fun TapeControls(
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Play button
-        OutlinedIconButton(
-            onClick = onPlay,
-            modifier = Modifier.size(56.dp),
-            colors = IconButtonDefaults.outlinedIconButtonColors(
-                contentColor = if (isPlaying) TeOrange else TeLightGray
-            )
+        // Play/Pause button
+        Op1Button(
+            onClick = if (isPlaying) onPause else onPlay,
+            isActive = isPlaying
         ) {
             Icon(
-                imageVector = Icons.Outlined.PlayArrow,
-                contentDescription = "Play",
-                modifier = Modifier.size(28.dp)
+                imageVector = if (isPlaying) Icons.Outlined.Pause else Icons.Outlined.PlayArrow,
+                contentDescription = if (isPlaying) "Pause" else "Play",
+                tint = TeBlack,
+                modifier = Modifier.size(24.dp)
             )
         }
         
-        Spacer(Modifier.width(24.dp))
-        
-        // Pause button
-        OutlinedIconButton(
-            onClick = onPause,
-            modifier = Modifier.size(56.dp),
-            colors = IconButtonDefaults.outlinedIconButtonColors(
-                contentColor = TeLightGray
-            )
-        ) {
-            Icon(
-                imageVector = Icons.Outlined.Pause,
-                contentDescription = "Pause",
-                modifier = Modifier.size(28.dp)
-            )
-        }
-        
-        Spacer(Modifier.width(24.dp))
+        Spacer(Modifier.width(32.dp))
         
         // Stop button
-        OutlinedIconButton(
+        Op1Button(
             onClick = onStop,
-            modifier = Modifier.size(56.dp),
-            colors = IconButtonDefaults.outlinedIconButtonColors(
-                contentColor = TeLightGray
-            )
+            isActive = false
         ) {
-            Icon(
-                imageVector = Icons.Outlined.Stop,
-                contentDescription = "Stop",
-                modifier = Modifier.size(28.dp)
+            Box(
+                modifier = Modifier
+                    .size(14.dp)
+                    .background(TeBlack)
             )
         }
     }
 }
+
+/**
+ * OP-1 style 3D button with shadow effect.
+ */
+@Composable
+private fun Op1Button(
+    onClick: () -> Unit,
+    isActive: Boolean,
+    modifier: Modifier = Modifier,
+    content: @Composable () -> Unit
+) {
+    Box(
+        modifier = modifier
+            .size(72.dp)
+            .padding(4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        // Outer shadow/border
+        Surface(
+            modifier = Modifier.fillMaxSize(),
+            shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
+            color = Color(0xFFB0B0B0),
+            shadowElevation = 4.dp
+        ) {
+            // Inner button
+            Surface(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(4.dp),
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(12.dp),
+                color = if (isActive) Color(0xFFE8E8E8) else Color(0xFFF5F5F5),
+                onClick = onClick
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    content()
+                }
+            }
+        }
+    }
+}
+

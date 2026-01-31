@@ -150,16 +150,24 @@ fun DrumKeyboardScreen(
                         modifier = Modifier.fillMaxSize(),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        // Legend
-                        Row(
+                        // Patch metadata
+                        Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 16.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally)
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            LegendItem(color = TeOrange, label = "Kick/Snare")
-                            LegendItem(color = TeGreen, label = "Hi-Hat/Perc")
-                            LegendItem(color = TeBlue, label = "Cymbal/FX")
+                            Text(
+                                text = uiState.drumName.ifEmpty { "Drum Kit" },
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = TeLightGray
+                            )
+                            Text(
+                                text = "${uiState.drumType} • ${uiState.sampleCount} samples",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = TeMediumGray
+                            )
                         }
                         
                         Spacer(Modifier.weight(1f))
@@ -188,24 +196,6 @@ fun DrumKeyboardScreen(
     }
 }
 
-@Composable
-private fun LegendItem(color: androidx.compose.ui.graphics.Color, label: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(12.dp)
-                .background(color, RoundedCornerShape(3.dp))
-        )
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            color = TeMediumGray
-        )
-    }
-}
 
 data class DrumKeyboardUiState(
     val isLoading: Boolean = true,
